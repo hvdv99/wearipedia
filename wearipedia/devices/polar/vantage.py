@@ -1,4 +1,6 @@
 from datetime import datetime
+from time import sleep
+import webbrowser
 
 from requests_oauthlib import OAuth2Session
 
@@ -82,7 +84,7 @@ class PolarVantage(BaseDevice):
                 "",
             )
 
-    def _filter_synthetic(self, data, data_type, params):
+    def _filter_synthetic(self, data, params):
         # Here we just return the data we've already generated,
         # but index into it based on the params. Specifically, we
         # want to return the data between the start and end dates.
@@ -155,6 +157,8 @@ class PolarVantage(BaseDevice):
 
         # Ask user to log in via webbrowser
         print(f"Open the following URL in your webbrowser and copy the resulting URL after loggin in:\n{authorization_url}")
+        sleep(10)
+        webbrowser.open_new(authorization_url)
         authorization_response = input('Enter the full callback URL')
 
         # Fetch authorization token
