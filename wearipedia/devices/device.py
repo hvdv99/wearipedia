@@ -164,7 +164,7 @@ class BaseDevice:
                     getattr(self, data_type), data_type, params
                 )
 
-    def _authenticate(self, auth_creds):
+    def _authenticate(self, auth_creds=None):
         """Authenticates the device. This is called by the authenticate() method.
 
         :param auth_creds: a dictionary containing authentication credentials for the device.
@@ -175,7 +175,7 @@ class BaseDevice:
 
         raise NotImplementedError
 
-    def authenticate(self, auth_creds):
+    def authenticate(self, auth_creds=None):
         """Authenticates the device against the API. For now, should be user-interactive, if
         the authentication protocol requires a step in which you get a code by visiting their
         website.

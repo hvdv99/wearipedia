@@ -1,9 +1,6 @@
-import base64
-import re
-import uuid
 from datetime import datetime
 
-import requests
+from requests_oauthlib import OAuth2Session
 
 from ...utils import seed_everything
 from ..device import BaseDevice
@@ -50,6 +47,10 @@ class PolarVantage(BaseDevice):
             params,
             {"seed": 0, "start_date": "2022-03-01", "end_date": "2022-06-17"},
         )
+
+        self.auth_url = "https://flow.polar.com/oauth2/authorization"
+        self.token_url = "https://polarremote.com/v2/oauth2/token"
+        self.user_url = "https://www.polaraccesslink.com/v3/users"
 
         self.token = None
         self.user_id = None
@@ -121,79 +122,58 @@ class PolarVantage(BaseDevice):
             self.user_id = auth_creds["user_id"]
             return
 
-        print(
-            "Input your client id.",
-            "If you need a new application, you can register one at https://admin.polaraccesslink.com",
-            "\n",
+        elif (
+            auth_creds
+            and isinstance(auth_creds, dict)
+            and "client_id" in auth_creds
+            and "client_secret" in auth_creds
+            and "redirect_uri" in auth_creds
+            ):
+
+            client_id = auth_creds.get('client_id')
+            client_secret = auth_creds.get('client_secret')
+            redirect_uri = auth_creds.get('redirect_uri')
+
+        else:
+            print(
+                "Input your client id.\nIf you need a new application, \
+                    you can register one at https://admin.polaraccesslink.com\n"
+                )
+
+            # Retrieve information from user
+            client_id = input("Enter the client id: ")
+            client_secret = input("Enter the client secret: ")
+            redirect_uri = input("Enter your redirect URI: ")
+
+        # Using requests_oauthlib to simplify code
+        oauth = OAuth2Session(client_id, redirect_uri=redirect_uri, scope="accesslink.read_all")
+
+        # Retrieve authorization URL
+        authorization_url, _ = oauth.authorization_url(
+            url=self.auth_url
+            )
+
+        # Ask user to log in via webbrowser
+        print(f"Open the following URL in your webbrowser and copy the resulting URL after loggin in:\n{authorization_url}")
+        authorization_response = input('Enter the full callback URL')
+
+        # Fetch authorization token
+        token_response = oauth.fetch_token(
+            token_url=self.token_url,
+            authorization_response=authorization_response,
+            client_secret=client_secret
         )
 
-        client_id = input("Enter the client id: ")
-        client_secret = input("Enter the client secret: ")
+        # Save as class param
+        self.token = token_response.get('access_token')
+        self.user_id = token_response.get('x_user_id')
 
-        # combine all parameters into the url string
-        url = f"https://flow.polar.com/oauth2/authorization?response_type=code&client_id={client_id}&scope=accesslink.read_all"
+        # Register this application as user to fetch the data
+        json = {"member-id": self.user_id}
+        r = oauth.post(self.user_url,
+                       json=json)
 
-        print(
-            "Click the URL above to access the Authorization page. Check Allow All and click the Allow button then input the resulting url",
-            url,
-        )
-
-        authurl = input("Enter the resulting url: ")
-
-        lst_of_token = []
-        append = False
-        for i in authurl:
-            if i == "=":
-                append = True
-                continue
-            elif i == "&":
-                break
-            if append == True:
-                lst_of_token.append(i)
-
-        authorization_code = "".join(lst_of_token)
-        credentials = f"{client_id}:{client_secret}"
-
-        # Encode to base64
-        encoded_credentials = base64.b64encode(credentials.encode("utf-8")).decode(
-            "utf-8"
-        )
-
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": f"Basic {encoded_credentials}",
-            "Accept": "application/json",
-        }
-        body = {
-            "grant_type": "authorization_code",
-            "code": authorization_code,
-        }
-
-        r = requests.post(
-            "https://polarremote.com/v2/oauth2/token", data=body, headers=headers
-        )
-        if r.status_code != 200:
-            print("Failed authorization request:", r.json())
-
-        if "access_token" not in r.json():
-            print("No access token found:", r.json())
-
-        self.token = r.json()["access_token"]
-        self.user_id = r.json()["x_user_id"]
-        print("Access token:", self.token)
-        print("User ID:", self.user_id)
-
-        input_body = {"member-id": self.user_id}
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.token}",
-        }
-
-        r = requests.post(
-            "https://www.polaraccesslink.com/v3/users", headers=headers, json=input_body
-        )
-
+        # Verify operation
         if r.status_code >= 200 and r.status_code < 400:
             print("Registered user:")
             print(r.json())
